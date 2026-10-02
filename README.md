@@ -132,4 +132,4 @@ node's `/docs/actions/` files.
 
 ## License
 
-[MIT](LICENSE). The actions you write in your copy are yours.
+[MIT](LICENSE).
