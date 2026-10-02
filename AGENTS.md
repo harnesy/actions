@@ -2,7 +2,7 @@
 
 An action is a script you write and the human runs from the harnsy
 dashboard. You propose it; the human enables it; only the enabled version
-runs. The contract is `contract/contract.md` (1.0.0): read it before your
+runs. The contract is `contract/contract.md` (1.1.0): read it before your
 first action.
 
 ## Layout

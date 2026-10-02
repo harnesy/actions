@@ -18,7 +18,7 @@ import (
 	"unicode/utf8"
 )
 
-// Definition is an action's definition (contract 1.0.0).
+// Definition is an action's definition (contract 1.1.0).
 type Definition struct {
 	From        string    `json:"from,omitempty"`
 	Project     string    `json:"project,omitempty"`
@@ -125,14 +125,19 @@ func (d *Definition) Check() error {
 		if _, ok := ScriptFiles[d.Script.Lang]; !ok {
 			bad("script.lang %q: bash, sh, python, node or go", d.Script.Lang)
 		}
-		if strings.TrimSpace(d.Script.Body) == "" || len(d.Script.Body) > 65536 || !utf8.ValidString(d.Script.Body) {
-			bad("script.body: UTF-8 text, not blank, up to 64 KiB")
+		if strings.TrimSpace(d.Script.Body) == "" || !utf8.ValidString(d.Script.Body) || utf8.RuneCountInString(d.Script.Body) > 65536 {
+			bad("script.body: UTF-8 text, not blank, up to 65536 characters")
 		}
 	default:
 		if n := len(d.Command.Argv); n == 0 || n > 32 {
 			bad("command.argv: 1 to 32 items")
 		} else if a0 := d.Command.Argv[0]; a0 == "" || filepath.IsAbs(a0) || strings.Contains(a0, "{") || !strings.ContainsAny(a0, `/\`) {
 			bad("command.argv[0] %q: a file of the project, as a relative path like bin/tool", a0)
+		}
+		for _, x := range d.Command.Argv {
+			if utf8.RuneCountInString(x) > 500 || strings.ContainsRune(x, 0) {
+				bad("command.argv: items up to 500 characters, no NUL")
+			}
 		}
 	}
 	if cwd := d.CwdOr(); filepath.IsAbs(cwd) || strings.HasPrefix(filepath.Clean(cwd), "..") {
@@ -147,6 +152,9 @@ func (d *Definition) Check() error {
 			bad("params[%d] %q: a-z, 0-9 and _, starting with a letter, unique", i, p.Name)
 		}
 		seen[p.Name] = true
+		if utf8.RuneCountInString(p.Label) > 80 {
+			bad("param %s: label up to 80 characters", p.Name)
+		}
 		switch p.Type {
 		case "enum":
 			if len(p.Values) == 0 || len(p.Values) > 20 {
@@ -169,10 +177,15 @@ func (d *Definition) Check() error {
 			}
 		}
 	}
+	if len(d.Env) > 32 {
+		bad("env: at most 32 names")
+	}
+	envSeen := map[string]bool{}
 	for _, e := range d.Env {
-		if !envPattern.MatchString(e) || reservedEnv.MatchString(e) {
-			bad("env %q: a variable name, never HARNSY_*, CCBUS_* or ACTION_*", e)
+		if !envPattern.MatchString(e) || reservedEnv.MatchString(e) || envSeen[e] {
+			bad("env %q: a variable name, once, never HARNSY_*, CCBUS_* or ACTION_*", e)
 		}
+		envSeen[e] = true
 	}
 	if _, err := d.TimeoutOr(); err != nil {
 		errs = append(errs, err)
@@ -185,9 +198,14 @@ func (d *Definition) Check() error {
 	if len(d.Numbers) > 8 {
 		bad("numbers: at most 8")
 	}
+	numSeen := map[string]bool{}
 	for i, n := range d.Numbers {
-		if !paramPattern.MatchString(n.Key) || n.Of != "" && !paramPattern.MatchString(n.Of) {
-			bad("numbers[%d]: key and of are a-z, 0-9 and _, starting with a letter", i)
+		if !paramPattern.MatchString(n.Key) || n.Of != "" && !paramPattern.MatchString(n.Of) || numSeen[n.Key] {
+			bad("numbers[%d]: key and of are a-z, 0-9 and _, starting with a letter; keys unique", i)
+		}
+		numSeen[n.Key] = true
+		if utf8.RuneCountInString(n.Label) > 80 {
+			bad("numbers[%d]: label up to 80 characters", i)
 		}
 	}
 	return errors.Join(errs...)
@@ -290,7 +308,7 @@ func (d *Definition) Args(given map[string]string, dir string) ([]string, error)
 			if p.Default == nil {
 				return nil, fmt.Errorf("parameter %s: no value and no default", p.Name)
 			}
-			v = fmt.Sprint(p.Default)
+			v = defaultString(p.Default)
 		}
 		v, err := p.value(v, dir)
 		if err != nil {
@@ -319,6 +337,15 @@ func (d *Definition) param(name string) *Param {
 		}
 	}
 	return nil
+}
+
+// defaultString is a default as text: a JSON number 1000000 is "1000000",
+// not "1e+06".
+func defaultString(v any) string {
+	if f, ok := v.(float64); ok {
+		return strconv.FormatFloat(f, 'f', -1, 64)
+	}
+	return fmt.Sprint(v)
 }
 
 var refPattern = regexp.MustCompile(`^[A-Za-z0-9._/][A-Za-z0-9._/~^-]{0,99}$`)

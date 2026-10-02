@@ -52,14 +52,14 @@ file in the project.
   "script": {"lang": "bash"},
   "params": [{"name": "max_used", "type": "int", "min": 1, "max": 100, "default": 90}],
   "timeout": "1m",
-  "numbers": [{"key": "free_gb", "label": "Free, GB"}, {"key": "used_pct", "of": "max_used"}]
+  "numbers": [{"key": "free_gb", "label": "Free, GB"}, {"key": "used_gb", "of": "size_gb"}]
 }
 ```
 
 ## The contract, in short
 
 The full text is [`contract/contract.md`](contract/contract.md) (version
-1.0.0, as harnsy serves it at `/docs/actions/contract.md`), with JSON
+1.1.0, as harnsy serves it at `/docs/actions/contract.md`), with JSON
 Schemas and an OpenAPI description next to it.
 
 - **Arguments.** One per parameter, in the declared order (`$1`, `$2`, …);
@@ -69,14 +69,18 @@ Schemas and an OpenAPI description next to it.
   digits, `bool` `true` or `false` (`1`, `t`, `TRUE` are accepted),
   `commit` the full 40-character hash a branch, tag or commit resolves to
   in the action's directory.
-- **Environment.** Only `PATH`, `HOME`, `LANG`, `USER`, `TMPDIR`, the
-  names the action lists in `env`, and `ACTION_CONTRACT` (`1`),
-  `ACTION_RUN_ID`, `ACTION_RESULT` (write the result there),
-  `ACTION_DIR` (a directory of the run's own).
-- **Markers.** A whole line on standard output: `::step <text>` (what
-  runs now) and `::fail <text>` (why it failed, one line).
+- **Where.** On a Linux node, for now.
+- **Environment.** Only `PATH`, `HOME`, `LANG`, `USER`, `TMPDIR`,
+  `HARNSY_HOME` (so the harnsy CLI reaches this node), the names the
+  action lists in `env`, and `ACTION_CONTRACT` (`1`), `ACTION_RUN_ID`,
+  `ACTION_RESULT` (write the result there), `ACTION_DIR` (a directory of
+  the run's own).
+- **Markers.** A whole line of output (standard output or error):
+  `::step <text>` (what runs now) and `::fail <text>` (why it failed,
+  one line).
 - **Exit.** 0 is ok, anything else failed; past `timeout` (1m to 2h,
-  default 30m) the run is stopped.
+  default 30m) the run is stopped. When the script exits, what it left
+  running is stopped too.
 - **Result.** JSON in `$ACTION_RESULT`, up to 64 KiB, every field optional:
 
 ```json

@@ -83,6 +83,7 @@ func TestCheckFindsEveryLimit(t *testing.T) {
 		"no path":      {Artifacts: []Artifact{{Label: "x"}}},
 		"ftp link":     {Links: []Link{{URL: "ftp://x"}}},
 		"no host":      {Links: []Link{{URL: "https:///path"}}},
+		"login":        {Links: []Link{{URL: "https://me:pw@example.com/"}}},
 		"long label":   {Links: []Link{{URL: "https://x", Label: strings.Repeat("x", 81)}}},
 		"21 artifacts": {Artifacts: make([]Artifact, 21)},
 		"eleven links": {Links: make([]Link, 11)},

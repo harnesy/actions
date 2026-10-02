@@ -1,14 +1,16 @@
 openapi: 3.1.0
 info:
   title: harnsy actions API
-  version: 1.0.0
+  version: 1.1.0
   description: |
-    Actions (#859): scripts agents propose and the human runs from the
-    harnsy dashboard. Contract 1.0.0: contract.md. Served by a harnsy node
-    on its private port (http://127.0.0.1:7788 by default) and, for agents,
-    its agent port. Through the gateway every write is 403 from_outside.
-    The human's moves are the dashboard's own requests (Sec-Fetch-Site:
-    same-origin); an agent passes "from" = its own name.
+    Actions: scripts agents propose and the human runs from the harnsy
+    dashboard. Contract 1.1.0: contract.md. Served by a harnsy node on its
+    private port (http://127.0.0.1:7788 by default) and, for agents, its
+    agent port. From outside (the gateway) actions are read only. The
+    human's moves are the dashboard's own requests (Sec-Fetch-Site:
+    same-origin); an agent passes "from" = its own name. Errors are
+    {"ok": false, "error", "code"}, but a body that is not JSON (400, plain
+    text) and a wrong method (405).
 servers:
   - url: http://127.0.0.1:7788
 paths:
@@ -87,6 +89,7 @@ paths:
                 action: {enum: [enable, disable, reject, agents, pin, delete]}
                 version: {type: integer}
                 "on": {type: boolean}
+                file_sha256: {type: string, description: "enabling a command: the sha256 of its file as shown by GET /api/actions/{id}/file"}
       responses:
         "200":
           description: Done; "action" is null after delete
@@ -137,6 +140,31 @@ paths:
                   - $ref: "#/components/schemas/Error"
                   - properties: {run_id: {type: integer}}
         "501": {$ref: "#/components/responses/Error"}
+  /api/actions/{id}/file:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      - {name: version, in: query, required: true, schema: {type: integer}}
+    get:
+      summary: A command version's file as it is now, for the human to read before enabling
+      responses:
+        "200":
+          description: The file
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file:
+                    type: object
+                    required: [path, sha256, size, binary]
+                    properties:
+                      path: {type: string}
+                      sha256: {type: string}
+                      size: {type: integer}
+                      text: {type: string, description: UTF-8 text up to 64 KiB}
+                      binary: {type: boolean}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
   /api/actions/{id}/runs:
     parameters:
       - {name: id, in: path, required: true, schema: {type: integer}}
@@ -225,6 +253,7 @@ paths:
                   ok: {const: true}
                   run: {$ref: "action-run.schema.json"}
         "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
 components:
   responses:
     Error:
@@ -245,8 +274,9 @@ components:
             invalid, bad_param, human_only, not_seated, not_author,
             agents_not_allowed, from_outside, edition_actions,
             edition_action_agents, not_found, no_project, unchanged,
-            already_running, not_proposed, not_enabled, file_changed,
-            file_missing, cwd_outside, no_disk, windows_unsupported
+            too_many_versions, already_running, not_proposed, not_enabled,
+            sha_mismatch, file_changed, file_missing, cwd_outside,
+            no_project_dir, no_disk, os_unsupported, scrub_unavailable
     Action:
       type: object
       required: [id, name, title, project, state, version, agents_may_run, pin, kind, cwd, params, env, timeout_s, heavy, marks, numbers, pending, last_enabled, last_run, running, created_by, created_at]

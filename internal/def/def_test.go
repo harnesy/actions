@@ -83,6 +83,10 @@ func TestCheckRefuses(t *testing.T) {
 		"bad number of":  {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Numbers: []NumberD{{Key: "used", Of: "Total"}}},
 		"brace argv0":    {Name: "x", Command: &Command{Argv: []string{"bin/{tool}"}}},
 		"unknown {p}":    {Name: "x", Command: &Command{Argv: []string{"bin/x", "{nope}"}}},
+		"long arg":       {Name: "x", Command: &Command{Argv: []string{"bin/x", strings.Repeat("a", 501)}}},
+		"env twice":      {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Env: []string{"GOPATH", "GOPATH"}},
+		"same number":    {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Numbers: []NumberD{{Key: "a"}, {Key: "a"}}},
+		"long label":     {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Params: []Param{{Name: "a", Type: "int", Label: strings.Repeat("l", 81)}}},
 	} {
 		if d.Check() == nil {
 			t.Errorf("%s: passed", name)
@@ -117,5 +121,22 @@ func TestCommandFile(t *testing.T) {
 	d.Cwd = "../"
 	if _, err := d.WorkDir(root); err == nil {
 		t.Error("a cwd outside the project passed")
+	}
+}
+
+// A JSON default of 1000000 is passed as 1000000, as harnsy passes it.
+func TestBigDefault(t *testing.T) {
+	d := &Definition{Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Params: []Param{{Name: "n", Type: "int", Default: float64(1000000)}}}
+	args, err := d.Args(nil, ".")
+	if err != nil || len(args) != 1 || args[0] != "1000000" {
+		t.Fatalf("args %q %v", args, err)
+	}
+}
+
+// The script body counts characters, as harnsy does.
+func TestBodyInCharacters(t *testing.T) {
+	d := &Definition{Name: "x", Script: &Script{Lang: "bash", Body: strings.Repeat("я", 65536)}}
+	if err := d.Check(); err != nil {
+		t.Errorf("65536 characters: %v", err)
 	}
 }

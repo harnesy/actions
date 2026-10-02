@@ -1,4 +1,4 @@
-# harnsy actions contract, version 1.0.0
+# harnsy actions contract, version 1.1.0
 
 An **action** is a script an agent writes and the human runs from the
 harnsy dashboard. This contract is what a script and a client of the HTTP
@@ -26,18 +26,27 @@ the API answers `"contract": "1.0.0"` in `GET /api/actions`.
   then runs scripts of the previous major unchanged for at least one more
   release, and says so in its release notes.
 
+| Version | What changed |
+|---|---|
+| 1.1.0 | `HARNSY_HOME` reaches the script; a command's file is shown (`GET /api/actions/{id}/file`) and enabled by its sha256 (`file_sha256`); Linux only (`os_unsupported`); a script body counts characters; links with a login or a secret are dropped; the result file must be a regular file |
+| 1.0.0 | first version |
+
 ## 1. Script ↔ harnsy
 
 ### How it starts
 
+- **Where it runs.** Linux nodes for now; elsewhere the API answers `501
+  os_unsupported`.
 - **Who.** The user harnsy runs as, on the node, with no terminal and no
   standard input.
 - **Where.** The working directory is the action's `cwd` inside the
   project's directory.
 - **What.** harnsy runs a copy of the enabled version: `bash <copy>`, `sh
   <copy>`, `python3 <copy>`, `node <copy>` or `go run <copy>.go`, by
-  `script.lang`; or, for a `command`, the project's file itself, checked by
-  the sha256 recorded when it was enabled.
+  `script.lang`; or, for a `command`, the project's file itself. The human
+  reads that file before enabling it and its sha256 is pinned; harnsy
+  checks it again before every run. Only that file is pinned, not what it
+  calls.
 - **Arguments.** Each parameter is one argument, in the declared order
   (`$1`, `$2`, …); in a `command`, where `{name}` stands. Never a shell
   string.
@@ -45,8 +54,9 @@ the API answers `"contract": "1.0.0"` in `GET /api/actions`.
   - `int`, `item`: decimal digits.
   - `bool`: `true` or `false`.
   - `commit`: the full 40-character hash the asked ref resolved to.
-- **Environment.** Only `PATH`, `HOME`, `LANG`, `USER`, `TMPDIR`, the names
-  listed in `env` (when set on the node), and:
+- **Environment.** Only `PATH`, `HOME`, `LANG`, `USER`, `TMPDIR`,
+  `HARNSY_HOME` (where the node keeps its data, so the harnsy CLI reaches
+  this node), the names listed in `env` (when set on the node), and:
 
 | Variable | What |
 |---|---|
@@ -55,7 +65,8 @@ the API answers `"contract": "1.0.0"` in `GET /api/actions`.
 | `ACTION_RESULT` | a file, empty at start: write the result there |
 | `ACTION_DIR` | a directory of this run's own, for artifacts and scratch |
 
-  Never `HARNSY_*`, `CCBUS_*`, tokens or keys of harnsy.
+  Never another `HARNSY_*`, `CCBUS_*`, nor harnsy's tokens or keys. The
+  script can still read what the node's user can.
 
 ### While it runs
 
@@ -76,7 +87,7 @@ the API answers `"contract": "1.0.0"` in `GET /api/actions`.
 - **Exit code.** 0 means `ok`, anything else `failed`. A run stopped at its
   timeout is `timeout`; one the human stopped is `cancelled`; one whose
   runner went without a word is `lost`.
-- **Result.** JSON in `$ACTION_RESULT`, up to 64 KiB, by
+- **Result.** JSON in `$ACTION_RESULT` (a regular file), up to 64 KiB, by
   [`action-result.schema.json`](action-result.schema.json). Optional: an
   empty file is no result. A file that is not JSON, or too big, is
   ignored and the run says why in `fail`.
@@ -85,7 +96,8 @@ the API answers `"contract": "1.0.0"` in `GET /api/actions`.
     that the definition names in `numbers` are kept as a series.
   - `artifacts`: up to 20 files inside the project's directory or
     `$ACTION_DIR`; harnsy records each one's size and sha256.
-  - `links`: up to 10 `http` or `https` URLs, shown, never opened by harnsy.
+  - `links`: up to 10 `http` or `https` URLs, shown, never opened by harnsy;
+    one with a login (`user:pass@`) or a secret in it is dropped.
 
 ### Example (bash)
 
@@ -105,8 +117,9 @@ printf '{"summary":"built %s","numbers":{"size_b":%s},"artifacts":[{"path":"%s",
 By [`action-definition.schema.json`](action-definition.schema.json). An
 agent proposes it; the human enables one version, pinned by the sha256 of
 the whole definition; any change is a new version that waits for the
-human. Who may do what, the bell and the errors: `docs/api.md` «Actions»
-(served at `/docs/api.md`).
+human. `script.body` counts characters (65536 at most). Who may do what,
+the bell and the errors: `docs/api.md` «Actions» (served at
+`/docs/api.md`).
 
 ## 3. The HTTP API
 

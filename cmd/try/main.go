@@ -5,11 +5,13 @@
 //
 // Like harnsy: the working directory is the action's cwd in the project (this
 // repository); the environment holds only PATH, HOME, LANG, USER, TMPDIR,
-// the names the action lists in env, and ACTION_CONTRACT, ACTION_RUN_ID,
-// ACTION_RESULT, ACTION_DIR; a script runs as a copy (lang go: `go run
-// <copy>.go` from the working directory, so the project's go.mod applies);
-// a command runs argv[0] found under that directory; at the timeout the
-// whole process group gets SIGTERM, then SIGKILL 10 s later.
+// HARNSY_HOME, the names the action lists in env, and ACTION_CONTRACT,
+// ACTION_RUN_ID, ACTION_RESULT, ACTION_DIR; a script runs as a copy (lang
+// go: `go run <copy>.go` from the working directory, so the project's go.mod
+// applies); a command runs argv[0] found under that directory; markers count
+// on standard output and error; at the timeout the whole process group gets
+// SIGTERM, then SIGKILL 10 s later, and when the script exits what it left
+// running is killed.
 //
 // Then it prints the last ::step and ::fail, the exit code and the result,
 // and checks the result against the contract. It exits 1 when the result
@@ -161,49 +163,68 @@ func run(out io.Writer, project, dir string, given params) (*outcome, error) {
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), limit(d))
-	defer cancel()
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = workDir
 	cmd.Env = environment(d, map[string]string{
 		"ACTION_CONTRACT": action.Contract, "ACTION_RUN_ID": "1",
 		"ACTION_RESULT": result, "ACTION_DIR": artifacts,
 	})
-	cmd.Stderr = w
-	inGroup(cmd, killGrace)
-	stdout, err := cmd.StdoutPipe()
+	setGroup(cmd)
+	// One pipe for stdout and stderr, as harnsy reads them: markers count on
+	// either. Our write end closes after the start, so the read ends when
+	// the last process holding it does.
+	pr, pw, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
+	cmd.Stdout, cmd.Stderr = pw, pw
 	fmt.Fprintf(w, "── %s: %s\n", d.Name, strings.Join(argv, " "))
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
+		pw.Close()
+		pr.Close()
 		return nil, err
 	}
+	pw.Close()
 	read := make(chan struct{})
-	go func() {
-		defer close(read)
-		sc := bufio.NewScanner(stdout)
-		sc.Buffer(make([]byte, 64<<10), 1<<20)
-		for sc.Scan() {
-			line := sc.Text()
-			fmt.Fprintln(w, "│ "+line)
-			if t, ok := strings.CutPrefix(line, "::step "); ok {
-				o.step = t
-			}
-			if t, ok := strings.CutPrefix(line, "::fail "); ok {
-				o.fail = t
-			}
+	go func() { readOutput(w, pr, o); close(read) }()
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+
+	timeout := time.NewTimer(limit(d))
+	defer timeout.Stop()
+	var kill <-chan time.Time
+	var waitErr error
+wait:
+	for {
+		select {
+		case waitErr = <-waited:
+			break wait
+		case <-timeout.C:
+			o.state = "timeout"
+			signalGroup(cmd.Process.Pid, false)
+			kill = time.After(killGrace)
+		case <-kill:
+			signalGroup(cmd.Process.Pid, true)
+			kill = nil
 		}
-	}()
-	waitErr := cmd.Wait() // closes stdout, also when something the run started still holds it
-	<-read
-	o.state, o.exit = "ok", cmd.ProcessState.ExitCode()
-	switch {
-	case ctx.Err() != nil:
-		o.state = "timeout"
-	case waitErr != nil:
-		o.state = "failed"
+	}
+	// The script is done: what it left running goes too, as on harnsy; its
+	// output gets a moment more to arrive.
+	signalGroup(cmd.Process.Pid, true)
+	select {
+	case <-read:
+	case <-time.After(2 * time.Second):
+		pr.Close()
+		<-read
+	}
+	pr.Close()
+	o.exit = cmd.ProcessState.ExitCode()
+	if o.state == "" {
+		o.state = "ok"
+		if waitErr != nil || o.exit != 0 {
+			o.state = "failed"
+		}
 	}
 	fmt.Fprintf(w, "── state %s after %s (exit %d)\n", o.state, time.Since(start).Round(time.Millisecond), o.exit)
 	if o.step != "" {
@@ -216,6 +237,43 @@ func run(out io.Writer, project, dir string, given params) (*outcome, error) {
 	}
 	o.problems = append(o.problems, checkResult(w, d, result, project, workDir, artifacts)...)
 	return o, nil
+}
+
+// readOutput copies the run's output to w and follows the markers: a line
+// read in pieces of at most 64 KiB, as harnsy does, so a long line never
+// stops the reading; only a piece that starts a line can be a marker.
+func readOutput(w io.Writer, r io.Reader, o *outcome) {
+	br := bufio.NewReaderSize(r, 64<<10)
+	whole := true
+	for {
+		piece, err := br.ReadSlice('\n')
+		if len(piece) > 0 {
+			if whole {
+				fmt.Fprint(w, "│ ")
+			}
+			_, _ = w.Write(piece)
+			if whole {
+				t := strings.TrimRight(string(piece), "\r\n")
+				if s, ok := strings.CutPrefix(t, "::step "); ok {
+					o.step = s
+				}
+				if s, ok := strings.CutPrefix(t, "::fail "); ok {
+					o.fail = s
+				}
+			}
+		}
+		switch {
+		case err == bufio.ErrBufferFull:
+			whole = false
+		case err != nil:
+			if !whole || len(piece) > 0 && piece[len(piece)-1] != '\n' {
+				fmt.Fprintln(w)
+			}
+			return
+		default:
+			whole = true
+		}
+	}
 }
 
 // program is what harnsy starts: the interpreter and a copy of the script,
@@ -254,26 +312,42 @@ func goImports(body string) []string {
 	if err != nil {
 		return []string{"lang go: " + err.Error()}
 	}
+	if len(f.Imports) == 0 {
+		return nil
+	}
+	std, err := stdPackages()
+	if err != nil {
+		return []string{"lang go: the standard library's packages could not be listed (go list std): " + err.Error()}
+	}
 	var out []string
 	for _, imp := range f.Imports {
 		path, _ := strconv.Unquote(imp.Path.Value)
-		if first, _, _ := strings.Cut(path, "/"); strings.Contains(first, ".") || !isStd(path) {
+		if !std[path] {
 			out = append(out, fmt.Sprintf("lang go imports %q: keep to the standard library (harnsy pins the script, not what it imports)", path))
 		}
 	}
 	return out
 }
 
-// isStd: path is a package of the standard library of the go on PATH.
-func isStd(path string) bool {
-	out, err := exec.Command("go", "list", "-f", "{{.Standard}}", path).Output()
-	return err == nil && strings.TrimSpace(string(out)) == "true"
+// stdPackages lists the standard library of the go on PATH, once.
+func stdPackages() (map[string]bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "go", "list", "-e", "std").Output()
+	if err != nil {
+		return nil, err
+	}
+	std := map[string]bool{}
+	for _, p := range strings.Fields(string(out)) {
+		std[p] = true
+	}
+	return std, nil
 }
 
 // environment is the little harnsy passes on.
 func environment(d *def.Definition, own map[string]string) []string {
 	var env []string
-	for _, k := range append([]string{"PATH", "HOME", "LANG", "USER", "TMPDIR"}, d.Env...) {
+	for _, k := range append([]string{"PATH", "HOME", "LANG", "USER", "TMPDIR", "HARNSY_HOME"}, d.Env...) {
 		if v, ok := os.LookupEnv(k); ok {
 			env = append(env, k+"="+v)
 		}

@@ -22,7 +22,7 @@ import (
 // Contract is the major version of the contract this package speaks.
 const Contract = "1"
 
-// Limits of the result file, from contract 1.0.0.
+// Limits of the result file, from contract 1.1.0.
 const (
 	MaxResultBytes = 64 << 10
 	MaxSummary     = 300
@@ -167,8 +167,8 @@ func (r Result) Check() error {
 		errs = append(errs, fmt.Errorf("links: at most %d", MaxLinks))
 	}
 	for i, l := range r.Links {
-		if u, err := url.Parse(l.URL); err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" || len(l.URL) > MaxURL {
-			errs = append(errs, fmt.Errorf("links[%d]: an http(s) URL with a host, up to %d characters", i, MaxURL))
+		if u, err := url.Parse(l.URL); err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" || u.User != nil || len(l.URL) > MaxURL {
+			errs = append(errs, fmt.Errorf("links[%d]: an http(s) URL with a host and no login, up to %d characters", i, MaxURL))
 		}
 		if utf8.RuneCountInString(l.Label) > MaxLabel {
 			errs = append(errs, fmt.Errorf("links[%d]: label up to %d characters", i, MaxLabel))

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:harnsy:actions:1:action-result",
   "title": "harnsy action result",
-  "description": "What a script writes to $ACTION_RESULT (up to 64 KiB). Every field is optional; harnsy keeps what passes and drops the rest. Contract 1.0.0.",
+  "description": "What a script writes to $ACTION_RESULT (up to 64 KiB). Every field is optional; harnsy keeps what passes and drops the rest. Contract 1.1.0.",
   "type": "object",
   "properties": {
     "summary": {
@@ -61,7 +61,8 @@
             "type": "string",
             "format": "uri",
             "pattern": "^https?://",
-            "maxLength": 500
+            "maxLength": 500,
+            "description": "http(s); one with a login or a secret in it is dropped"
           },
           "label": {
             "type": "string",

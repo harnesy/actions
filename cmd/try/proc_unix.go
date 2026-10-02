@@ -5,19 +5,17 @@ package main
 import (
 	"os/exec"
 	"syscall"
-	"time"
 )
 
-// inGroup runs cmd in a process group of its own and, when its context
-// ends, stops the whole group as harnsy does: SIGTERM, then SIGKILL after
-// grace.
-func inGroup(cmd *exec.Cmd, grace time.Duration) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		pgid := -cmd.Process.Pid
-		err := syscall.Kill(pgid, syscall.SIGTERM)
-		time.AfterFunc(grace, func() { _ = syscall.Kill(pgid, syscall.SIGKILL) })
-		return err
+// setGroup starts cmd as the leader of a process group of its own, as
+// harnsy does, so the whole group can be stopped.
+func setGroup(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
+
+// signalGroup sends the group SIGTERM, or SIGKILL with kill.
+func signalGroup(pid int, kill bool) {
+	sig := syscall.SIGTERM
+	if kill {
+		sig = syscall.SIGKILL
 	}
-	cmd.WaitDelay = grace + 2*time.Second
+	_ = syscall.Kill(-pid, sig)
 }

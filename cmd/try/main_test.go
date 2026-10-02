@@ -101,3 +101,47 @@ printf '{"artifacts":[{"path":"%s"}]}' "$f" > "$ACTION_RESULT"
 		t.Fatalf("an artifact outside passed: %d\n%s", code, out.String())
 	}
 }
+
+// The last ::fail before the exit is never lost (the output is read to its
+// end before the run is judged), and a marker on stderr counts as harnsy
+// counts it.
+func TestTryKeepsTheLastFail(t *testing.T) {
+	root, dir := project(t, `{"name":"x","script":{"lang":"bash"}}`,
+		map[string]string{"actions/x/run.sh": "echo '::step checking'\necho '::fail disk full' >&2\nexit 1\n"})
+	for i := 0; i < 20; i++ {
+		var out bytes.Buffer
+		if _, err := try(&out, root, dir, params{}, false); err != nil || !strings.Contains(out.String(), "   fail: disk full") || !strings.Contains(out.String(), "state failed") {
+			t.Fatalf("run %d: %v\n%s", i, err, out.String())
+		}
+	}
+}
+
+// A script that leaves a child behind ends ok when it exits 0; the child
+// goes with its group, and try does not wait for it.
+func TestTryChildLeftBehind(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process groups")
+	}
+	root, dir := project(t, `{"name":"x","script":{"lang":"bash"}}`,
+		map[string]string{"actions/x/run.sh": "echo '::step done'\nsleep 100 &\n"})
+	var out bytes.Buffer
+	start := time.Now()
+	code, err := try(&out, root, dir, params{}, true)
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("try waited %s for the child", took)
+	}
+	if err != nil || code != 0 || !strings.Contains(out.String(), "state ok") {
+		t.Fatalf("code %d %v\n%s", code, err, out.String())
+	}
+}
+
+// A line longer than any buffer does not stop the reading.
+func TestTryLongLine(t *testing.T) {
+	root, dir := project(t, `{"name":"x","script":{"lang":"bash"}}`,
+		map[string]string{"actions/x/run.sh": "head -c 2097152 /dev/zero | tr '\\0' x\necho\necho '::step after the long line'\n"})
+	var out bytes.Buffer
+	code, err := try(&out, root, dir, params{}, true)
+	if err != nil || code != 0 || !strings.Contains(out.String(), "last step: after the long line") {
+		t.Fatalf("code %d %v\n%s", code, err, out.String()[max(0, out.Len()-400):])
+	}
+}

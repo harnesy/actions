@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:harnsy:actions:1:action-run",
   "title": "harnsy action run",
-  "description": "A run as GET /api/action-runs/<id> shows it ({\"run\": …}). Contract 1.0.0.",
+  "description": "A run as GET /api/action-runs/<id> shows it ({\"run\": …}). Contract 1.1.0.",
   "type": "object",
   "required": [
     "id",
