@@ -30,7 +30,7 @@ paths:
                 type: object
                 required: [actions, contract]
                 properties:
-                  contract: {type: string, example: 1.0.0}
+                  contract: {type: string, example: 1.1.0}
                   actions: {type: array, items: {$ref: "#/components/schemas/Action"}}
         "404": {$ref: "#/components/responses/Error"}
     post:
@@ -156,13 +156,14 @@ paths:
                 properties:
                   file:
                     type: object
-                    required: [path, sha256, size, binary]
+                    required: [path, sha256, size, text, truncated, binary]
                     properties:
                       path: {type: string}
-                      sha256: {type: string}
+                      sha256: {type: string, description: of the whole file}
                       size: {type: integer}
-                      text: {type: string, description: UTF-8 text up to 64 KiB}
-                      binary: {type: boolean}
+                      text: {type: string, description: "the file as UTF-8 text, its first 64 KiB when truncated; empty for a binary file"}
+                      truncated: {type: boolean, description: the text is longer than what is shown}
+                      binary: {type: boolean, description: "not UTF-8 text (or a NUL in it): no text is shown, only the sha256 is pinned"}
         "404": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
   /api/actions/{id}/runs:

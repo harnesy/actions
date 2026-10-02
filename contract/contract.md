@@ -16,7 +16,7 @@ machine-readable parts next to it:
 
 The contract has a semantic version, `MAJOR.MINOR.PATCH`. A script reads
 the one it runs under in `$ACTION_CONTRACT` (the major number, e.g. `1`);
-the API answers `"contract": "1.0.0"` in `GET /api/actions`.
+the API answers the whole version (e.g. `"contract": "1.1.0"`) in `GET /api/actions`.
 
 - **PATCH**: wording, examples. Nothing a script or client sees changes.
 - **MINOR**: something is added: an optional field, a variable, a marker,
@@ -28,7 +28,7 @@ the API answers `"contract": "1.0.0"` in `GET /api/actions`.
 
 | Version | What changed |
 |---|---|
-| 1.1.0 | `HARNSY_HOME` reaches the script; a command's file is shown (`GET /api/actions/{id}/file`) and enabled by its sha256 (`file_sha256`); Linux only (`os_unsupported`); a script body counts characters; links with a login or a secret are dropped; the result file must be a regular file |
+| 1.1.0 | `HARNSY_HOME` reaches the script; a command's file is shown (`GET /api/actions/{id}/file`: text, its first 64 KiB with `truncated`, or `binary`) and enabled by its sha256 (`file_sha256`); Linux only (`os_unsupported`); a script body counts characters; links with a login or a secret are dropped; the result file must be a regular file |
 | 1.0.0 | first version |
 
 ## 1. Script ↔ harnsy
