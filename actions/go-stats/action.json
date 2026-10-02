@@ -1,0 +1,16 @@
+{
+  "name": "go-stats",
+  "title": "Go code stats",
+  "description": "Counts the Go files, packages and lines of the project and the share of test files. Fails below min_tests percent. A command: the built binary bin/go-stats (make build), pinned by its sha256.",
+  "command": {"argv": ["bin/go-stats", "{min_tests}"]},
+  "params": [
+    {"name": "min_tests", "type": "int", "min": 0, "max": 100, "default": 0, "label": "Fail below this share of test files, %"}
+  ],
+  "timeout": "5m",
+  "numbers": [
+    {"key": "files", "label": "Go files"},
+    {"key": "lines", "label": "Lines"},
+    {"key": "packages", "label": "Packages"},
+    {"key": "tests_pct", "label": "Test files, %", "of": "min_tests"}
+  ]
+}

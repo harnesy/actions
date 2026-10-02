@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:harnsy:actions:1:action-result",
+  "title": "harnsy action result",
+  "description": "What a script writes to $ACTION_RESULT (up to 64 KiB). Every field is optional; harnsy keeps what passes and drops the rest. Contract 1.0.0.",
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "one line; 300 characters kept"
+    },
+    "numbers": {
+      "type": "object",
+      "maxProperties": 8,
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string",
+            "maxLength": 40
+          }
+        ]
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "absolute, or relative to the action's cwd; inside the project's directory or $ACTION_DIR"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https?://",
+            "maxLength": 500
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 80
+          }
+        }
+      }
+    }
+  }
+}

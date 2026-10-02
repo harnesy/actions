@@ -1,0 +1,87 @@
+package def
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// Every action in this repository loads and passes the checks harnsy makes.
+func TestRepositoryActions(t *testing.T) {
+	dirs, _ := filepath.Glob("../../actions/*")
+	if len(dirs) == 0 {
+		t.Fatal("no actions found")
+	}
+	for _, dir := range dirs {
+		d, err := Load(dir)
+		if err != nil {
+			t.Errorf("%s: %v", dir, err)
+			continue
+		}
+		if d.Name != filepath.Base(dir) {
+			t.Errorf("%s: name %q differs from its directory", dir, d.Name)
+		}
+		if _, err := d.Args(nil, "."); err != nil {
+			t.Errorf("%s: its defaults do not run: %v", dir, err)
+		}
+	}
+}
+
+func intp(n int) *int { return &n }
+
+func TestArgs(t *testing.T) {
+	d := &Definition{Name: "x", Command: &Command{Argv: []string{"bin/x", "--level={level}", "{n}", "fixed"}},
+		Params: []Param{
+			{Name: "level", Type: "enum", Values: []string{"low", "high"}, Default: "low"},
+			{Name: "n", Type: "int", Min: intp(1), Max: intp(5)},
+			{Name: "dry", Type: "bool", Default: false},
+		}}
+	args, err := d.Args(map[string]string{"n": "3"}, ".")
+	if err != nil || strings.Join(args, " ") != "--level=low 3 fixed" {
+		t.Fatalf("command args: %q %v", args, err)
+	}
+	d.Command, d.Script = nil, &Script{Lang: "bash", Body: "true"}
+	args, err = d.Args(map[string]string{"n": "3", "level": "high", "dry": "true"}, ".")
+	if err != nil || strings.Join(args, " ") != "high 3 true" {
+		t.Fatalf("script args: %q %v", args, err)
+	}
+	for _, bad := range []map[string]string{
+		{},                         // n has no default
+		{"n": "9"},                 // out of range
+		{"n": "1", "level": "mid"}, // not a value
+		{"n": "1", "dry": "yes"},   // not a bool
+		{"n": "1", "nope": "1"},    // no such parameter
+	} {
+		if _, err := d.Args(bad, "."); err == nil {
+			t.Errorf("%v passed", bad)
+		}
+	}
+}
+
+func TestCheckRefuses(t *testing.T) {
+	for name, d := range map[string]Definition{
+		"bad name":       {Name: "Disk", Script: &Script{Lang: "bash", Body: "x"}},
+		"both":           {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Command: &Command{Argv: []string{"bin/x"}}},
+		"neither":        {Name: "x"},
+		"absolute argv0": {Name: "x", Command: &Command{Argv: []string{"/usr/bin/x"}}},
+		"bare argv0":     {Name: "x", Command: &Command{Argv: []string{"make"}}},
+		"outside":        {Name: "x", Command: &Command{Argv: []string{"../x/y"}}},
+		"dash value":     {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Params: []Param{{Name: "a", Type: "enum", Values: []string{"-rf"}}}},
+		"reserved env":   {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Env: []string{"HARNSY_TOKEN"}},
+		"long timeout":   {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Timeout: "3h"},
+	} {
+		if d.Check() == nil {
+			t.Errorf("%s: passed", name)
+		}
+	}
+}
+
+func TestLoadRefusesUnknownFields(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "action.json"), []byte(`{"name":"x","script":{"lang":"bash"},"timeot":"1m"}`), 0o644)
+	os.WriteFile(filepath.Join(dir, "run.sh"), []byte("true\n"), 0o644)
+	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "timeot") {
+		t.Errorf("a misspelt field: %v", err)
+	}
+}

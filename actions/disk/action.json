@@ -1,0 +1,15 @@
+{
+  "name": "disk",
+  "title": "Disk",
+  "description": "Free space on the disk that holds the project. Fails when it is fuller than max_used percent.",
+  "script": {"lang": "bash"},
+  "params": [
+    {"name": "max_used", "type": "int", "min": 1, "max": 100, "default": 90, "label": "Fail above this use, %"}
+  ],
+  "timeout": "1m",
+  "pin": true,
+  "numbers": [
+    {"key": "free_gb", "label": "Free, GB"},
+    {"key": "used_pct", "label": "Used, %", "of": "max_used"}
+  ]
+}

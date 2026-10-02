@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:harnsy:actions:1:action-run",
+  "title": "harnsy action run",
+  "description": "A run as GET /api/action-runs/<id> shows it ({\"run\": …}). Contract 1.0.0.",
+  "type": "object",
+  "required": [
+    "id",
+    "action_id",
+    "version",
+    "sha256",
+    "state",
+    "by",
+    "params",
+    "created_at",
+    "numbers",
+    "artifacts",
+    "links"
+  ],
+  "properties": {
+    "id": {
+      "type": "integer"
+    },
+    "action_id": {
+      "type": "integer"
+    },
+    "version": {
+      "type": "integer"
+    },
+    "sha256": {
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "queued",
+        "waiting_resources",
+        "running",
+        "ok",
+        "failed",
+        "timeout",
+        "cancelled",
+        "lost"
+      ]
+    },
+    "by": {
+      "type": "object",
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "human",
+            "agent"
+          ]
+        },
+        "ref": {
+          "type": "string"
+        }
+      }
+    },
+    "params": {
+      "type": "object",
+      "description": "the values run, a commit as its full hash"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ended_at": {
+      "oneOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "exit": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "null while running, or when a signal ended it"
+    },
+    "step": {
+      "type": "string"
+    },
+    "fail": {
+      "type": "string"
+    },
+    "reason": {
+      "type": "string",
+      "description": "why it waits (waiting_resources) or was lost"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "numbers": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "size",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "label",
+          "url"
+        ],
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "log_bytes": {
+      "type": "integer"
+    }
+  }
+}

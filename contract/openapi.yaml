@@ -1,0 +1,304 @@
+openapi: 3.1.0
+info:
+  title: harnsy actions API
+  version: 1.0.0
+  description: |
+    Actions (#859): scripts agents propose and the human runs from the
+    harnsy dashboard. Contract 1.0.0: contract.md. Served by a harnsy node
+    on its private port (http://127.0.0.1:7788 by default) and, for agents,
+    its agent port. Through the gateway every write is 403 from_outside.
+    The human's moves are the dashboard's own requests (Sec-Fetch-Site:
+    same-origin); an agent passes "from" = its own name.
+servers:
+  - url: http://127.0.0.1:7788
+paths:
+  /api/actions:
+    get:
+      summary: The actions, newest state first by project and name
+      parameters:
+        - {name: project, in: query, schema: {type: string}, description: a project's id or name}
+        - {name: state, in: query, schema: {enum: [on, off, proposed]}}
+        - {name: pinned, in: query, schema: {enum: ["true"]}}
+      responses:
+        "200":
+          description: The list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [actions, contract]
+                properties:
+                  contract: {type: string, example: 1.0.0}
+                  actions: {type: array, items: {$ref: "#/components/schemas/Action"}}
+        "404": {$ref: "#/components/responses/Error"}
+    post:
+      summary: Propose an action, or a new version of one with the same name (an agent of the project)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "action-definition.schema.json"}
+      responses:
+        "201":
+          description: Proposed; nothing runs until the human enables it
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, action, version]
+                properties:
+                  ok: {const: true}
+                  action: {$ref: "#/components/schemas/Action"}
+                  version: {type: integer}
+        "400": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/actions/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    get:
+      summary: One action with its versions, the enabled and the pending definition
+      responses:
+        "200":
+          description: The action
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  action: {$ref: "#/components/schemas/ActionFull"}
+        "404": {$ref: "#/components/responses/Error"}
+    post:
+      summary: A move on the action
+      description: |
+        enable (the human; "version": any not rejected, e.g. last_enabled), disable (the human or an agent of the
+        project), reject (the human or the version's author; "version"),
+        agents and pin (the human; "on"), delete (the human).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                from: {type: string}
+                action: {enum: [enable, disable, reject, agents, pin, delete]}
+                version: {type: integer}
+                "on": {type: boolean}
+      responses:
+        "200":
+          description: Done; "action" is null after delete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {const: true}
+                  action: {oneOf: [{$ref: "#/components/schemas/ActionFull"}, {type: "null"}]}
+        "400": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+  /api/actions/{id}/run:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    post:
+      summary: Run the enabled version (the human; an agent where the human allowed it, harnsy Max)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from: {type: string}
+                params: {type: object, description: values by parameter name}
+      responses:
+        "202":
+          description: Queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {const: true}
+                  run: {$ref: "action-run.schema.json"}
+        "400": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409":
+          description: Refused; already_running also names the run
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/Error"
+                  - properties: {run_id: {type: integer}}
+        "501": {$ref: "#/components/responses/Error"}
+  /api/actions/{id}/runs:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 50, default: 20}}
+    get:
+      summary: The action's runs, newest first (the last 50 are kept)
+      responses:
+        "200":
+          description: Runs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runs: {type: array, items: {$ref: "action-run.schema.json"}}
+  /api/actions/{id}/numbers:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      - {name: key, in: query, required: true, schema: {type: string}}
+      - {name: since, in: query, schema: {type: string, default: 24h}, description: "24h, 7d, a Go duration or an RFC 3339 time"}
+    get:
+      summary: A series of one number the definition names
+      responses:
+        "200":
+          description: Points, oldest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  key: {type: string}
+                  points:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at: {type: string, format: date-time}
+                        value: {oneOf: [{type: number}, {type: string}]}
+  /api/action-runs/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    get:
+      summary: One run
+      responses:
+        "200":
+          description: The run
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run: {$ref: "action-run.schema.json"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/action-runs/{id}/log:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+      - {name: offset, in: query, schema: {type: integer, default: 0}}
+    get:
+      summary: The run's log from a byte, at most 256 KiB, secrets cut out
+      responses:
+        "200":
+          description: A piece of the log
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text, offset, next, done]
+                properties:
+                  text: {type: string}
+                  offset: {type: integer}
+                  next: {type: integer, description: the offset of the next read}
+                  done: {type: boolean, description: the run has ended}
+  /api/action-runs/{id}/cancel:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: integer}}
+    post:
+      summary: Stop the run (the human)
+      responses:
+        "200":
+          description: Stopping or stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {const: true}
+                  run: {$ref: "action-run.schema.json"}
+        "403": {$ref: "#/components/responses/Error"}
+components:
+  responses:
+    Error:
+      description: Refused
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+  schemas:
+    Error:
+      type: object
+      required: [ok, error, code]
+      properties:
+        ok: {const: false}
+        error: {type: string}
+        code:
+          type: string
+          description: |
+            invalid, bad_param, human_only, not_seated, not_author,
+            agents_not_allowed, from_outside, edition_actions,
+            edition_action_agents, not_found, no_project, unchanged,
+            already_running, not_proposed, not_enabled, file_changed,
+            file_missing, cwd_outside, no_disk, windows_unsupported
+    Action:
+      type: object
+      required: [id, name, title, project, state, version, agents_may_run, pin, kind, cwd, params, env, timeout_s, heavy, marks, numbers, pending, last_enabled, last_run, running, created_by, created_at]
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        title: {type: string}
+        project:
+          type: object
+          properties: {id: {type: integer}, name: {type: string}}
+        description: {type: string}
+        state: {enum: ["on", "off", proposed]}
+        version: {type: integer, description: the enabled version, 0 for none}
+        enabled_by: {type: string}
+        enabled_at: {type: string, format: date-time}
+        agents_may_run: {type: boolean}
+        pin: {type: boolean}
+        kind: {enum: [script, command]}
+        lang: {type: string}
+        cwd: {type: string}
+        params: {type: array, items: {type: object}}
+        env: {type: array, items: {type: string}}
+        timeout_s: {type: integer}
+        heavy: {type: boolean}
+        marks: {type: array, items: {type: string}}
+        numbers: {type: array, items: {type: object}}
+        last_enabled: {type: integer, description: "while off, the version enabled last; 0 when none ever was"}
+        pending:
+          oneOf:
+            - type: "null"
+            - type: object
+              properties: {version: {type: integer}, by: {type: string}, at: {type: string, format: date-time}}
+        last_run: {oneOf: [{type: "null"}, {$ref: "action-run.schema.json"}]}
+        running: {oneOf: [{type: "null"}, {$ref: "action-run.schema.json"}]}
+        created_by: {type: string}
+        created_at: {type: string, format: date-time}
+    ActionFull:
+      allOf:
+        - $ref: "#/components/schemas/Action"
+        - type: object
+          properties:
+            versions:
+              type: array
+              items:
+                type: object
+                properties:
+                  version: {type: integer}
+                  state: {enum: [proposed, enabled, superseded, rejected]}
+                  sha256: {type: string}
+                  by: {type: string}
+                  at: {type: string, format: date-time}
+                  decided_by: {type: string}
+                  decided_at: {type: string, format: date-time}
+            spec: {oneOf: [{type: "null"}, {$ref: "action-definition.schema.json"}]}
+            pending_spec: {oneOf: [{type: "null"}, {$ref: "action-definition.schema.json"}]}

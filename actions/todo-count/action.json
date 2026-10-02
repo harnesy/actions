@@ -1,0 +1,15 @@
+{
+  "name": "todo-count",
+  "title": "TODO count",
+  "description": "Counts TODO and FIXME marks in the project's source files. Fails above max_todo.",
+  "script": {"lang": "go"},
+  "params": [
+    {"name": "max_todo", "type": "int", "min": 0, "max": 100000, "default": 1000, "label": "Fail above this many"}
+  ],
+  "timeout": "5m",
+  "numbers": [
+    {"key": "todo", "label": "TODO"},
+    {"key": "fixme", "label": "FIXME"},
+    {"key": "files", "label": "Files with marks"}
+  ]
+}
