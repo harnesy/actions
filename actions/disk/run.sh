@@ -7,7 +7,7 @@ max_used=${1:-90}
 
 echo "::step reading the disk of $(pwd)"
 # df -P: one line per disk, the same columns on Linux and macOS; sizes in KiB.
-read -r size_k used_k free_k used_pct < <(df -Pk . | awk 'NR == 2 { sub("%", "", $5); print $2, $3, $4, $5 }')
+read -r size_k _ free_k used_pct < <(df -Pk . | awk 'NR == 2 { sub("%", "", $5); print $2, $3, $4, $5 }')
 
 free_gb=$(awk -v k="$free_k" 'BEGIN { printf "%.1f", k / 1048576 }')
 size_gb=$(awk -v k="$size_k" 'BEGIN { printf "%.1f", k / 1048576 }')
