@@ -129,3 +129,7 @@ The contract has a semantic version. `ACTION_CONTRACT` holds its major
 number; a script of major 1 keeps working on every 1.x harnsy. When the
 contract adds something (a minor version), update `contract/` from your
 node's `/docs/actions/` files.
+
+## License
+
+[MIT](LICENSE). The actions you write in your copy are yours.
