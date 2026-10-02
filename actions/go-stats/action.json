@@ -11,6 +11,6 @@
     {"key": "files", "label": "Go files"},
     {"key": "lines", "label": "Lines"},
     {"key": "packages", "label": "Packages"},
-    {"key": "tests_pct", "label": "Test files, %", "of": "min_tests"}
+    {"key": "tests_pct", "label": "Test files, %"}
   ]
 }

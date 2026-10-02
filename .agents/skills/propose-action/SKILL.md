@@ -13,4 +13,4 @@ description: Propose a tested action of this repository to harnsy so the human c
 5. Report to your lead in one line: the action, its version, that it waits for the human. Do not ask the human in chat.
 6. A change later (script, parameters, a rebuilt binary) is a new version: propose again; the enabled one keeps running until the human enables the new one.
 
-Errors come as `HTTP <status> <code>: <text>`; read the code (`contract/openapi.yaml`, harnsy `docs/api.md` «Actions»).
+Errors come as `HTTP <status> <code>: <text>`; read the code (`contract/openapi.yaml`, harnsy `docs/api.md` "Actions").

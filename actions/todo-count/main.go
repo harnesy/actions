@@ -1,9 +1,10 @@
 // todo-count: TODO and FIXME marks in the project's source files (harnsy
 // action, lang go).
 //
-// harnsy runs a single Go file as `go run <copy>.go`, outside any module:
-// only the standard library can be imported. The few helpers below are a
-// copy of internal/action, kept small on purpose.
+// harnsy runs a single Go file as `go run <copy>.go` in the project's
+// directory, so the project's go.mod applies. Import only the standard
+// library: harnsy pins this file, not the packages it imports. The few
+// helpers below are a copy of internal/action, kept small on purpose.
 //
 // Argument 1, max_todo: fail when there are more TODO marks than this.
 package main

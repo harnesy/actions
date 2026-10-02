@@ -9,10 +9,16 @@ linters:
     - misspell
     - revive
   settings:
+    misspell:
+      locale: US
     revive:
       rules:
         - name: exported
           disabled: true
+  exclusions:
+    # defer f.Close(), fmt.Fprint* and the like: their errors are not worth a branch.
+    presets:
+      - std-error-handling
 formatters:
   enable:
     - gofmt

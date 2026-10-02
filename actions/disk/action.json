@@ -10,6 +10,7 @@
   "pin": true,
   "numbers": [
     {"key": "free_gb", "label": "Free, GB"},
-    {"key": "used_pct", "label": "Used, %", "of": "max_used"}
+    {"key": "used_gb", "label": "Used, GB", "of": "size_gb"},
+    {"key": "used_pct", "label": "Used, %"}
   ]
 }

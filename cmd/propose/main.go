@@ -37,23 +37,33 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := propose(flag.Arg(0), *from, *project, *base, *dry); err != nil {
+	repo, err := os.Getwd()
+	if err == nil {
+		err = propose(os.Stdout, repo, flag.Arg(0), *from, *project, *base, *dry)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "propose:", err)
 		os.Exit(1)
 	}
 }
 
-func propose(dir, from, project, base string, dry bool) error {
+// propose sends actions/<name> of the project repo (or prints it).
+func propose(w io.Writer, repo, dir, from, project, base string, dry bool) error {
 	d, err := def.Load(dir)
 	if err != nil {
 		return err
 	}
 	if d.Command != nil {
-		if _, err := os.Stat(d.Command.Argv[0]); err != nil {
+		// Where harnsy looks for it: argv[0] under the action's cwd.
+		file, err := d.CommandFile(repo)
+		if err != nil {
+			return err
+		}
+		if _, err := os.Stat(file); err != nil {
 			return fmt.Errorf("%s: %w; harnsy pins this file's sha256 when the human enables the action, build it first", d.Command.Argv[0], err)
 		}
-		if strings.HasSuffix(d.Command.Argv[0], ".sh") {
-			fmt.Fprintf(os.Stderr, "note: harnsy pins %s only, not what it calls; propose a built binary, or the script itself as script.body\n", d.Command.Argv[0])
+		if strings.HasSuffix(file, ".sh") {
+			fmt.Fprintf(w, "note: harnsy pins %s only, not what it calls; propose a built binary, or the script itself as script.body\n", d.Command.Argv[0])
 		}
 	}
 	d.From, d.Project = from, project
@@ -62,7 +72,7 @@ func propose(dir, from, project, base string, dry bool) error {
 		return err
 	}
 	if dry {
-		fmt.Println(string(body))
+		fmt.Fprintln(w, string(body))
 		return nil
 	}
 	if from == "" || project == "" {
@@ -90,13 +100,13 @@ func propose(dir, from, project, base string, dry bool) error {
 			ID int64 `json:"id"`
 		} `json:"action"`
 	}
-	json.Unmarshal(raw, &out)
+	_ = json.Unmarshal(raw, &out) // an answer that is not JSON is shown as it is, below
 	if resp.StatusCode != http.StatusCreated || !out.OK {
 		if out.Error != "" {
 			return fmt.Errorf("HTTP %d %s: %s", resp.StatusCode, out.Code, out.Error)
 		}
 		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, bytes.TrimSpace(raw))
 	}
-	fmt.Printf("proposed %s: action %d, version %d. It waits for the human on the dashboard (Actions).\n", d.Name, out.Action.ID, out.Version)
+	fmt.Fprintf(w, "proposed %s: action %d, version %d. It waits for the human on the dashboard (Actions).\n", d.Name, out.Action.ID, out.Version)
 	return nil
 }

@@ -19,7 +19,8 @@ first action.
 - Scratch files and artifacts go to `$ACTION_DIR`, not the project.
 - No secrets in output or the result. Ask for a variable by name in `env`; never `HARNSY_*`, `CCBUS_*`, `ACTION_*`.
 - Mark what the human must know in `marks`: `restarts_node`, `deletes`, `network`. Set `heavy` for builds and long scans.
-- lang go: standard library only (harnsy runs `go run <copy>.go` outside any module).
+- lang go: standard library only. harnsy runs `go run <copy>.go` in the project's directory, so the project's module applies and an import of its packages would build code the human never approved; `make try` fails on it.
+- In a command, only an argument that is exactly `{name}` takes a parameter; `--x={name}` stays literal.
 - A command is pinned by `argv[0]` alone: propose a built binary, never a wrapper script that calls other code.
 
 ## Before you propose

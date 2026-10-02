@@ -31,19 +31,20 @@ func TestRepositoryActions(t *testing.T) {
 func intp(n int) *int { return &n }
 
 func TestArgs(t *testing.T) {
-	d := &Definition{Name: "x", Command: &Command{Argv: []string{"bin/x", "--level={level}", "{n}", "fixed"}},
+	d := &Definition{Name: "x", Command: &Command{Argv: []string{"bin/x", "--level", "{level}", "{n}", "--n={n}", "fixed"}},
 		Params: []Param{
 			{Name: "level", Type: "enum", Values: []string{"low", "high"}, Default: "low"},
 			{Name: "n", Type: "int", Min: intp(1), Max: intp(5)},
 			{Name: "dry", Type: "bool", Default: false},
 		}}
 	args, err := d.Args(map[string]string{"n": "3"}, ".")
-	if err != nil || strings.Join(args, " ") != "--level=low 3 fixed" {
+	// Only a whole {name} argument is replaced, as harnsy does.
+	if err != nil || strings.Join(args, " ") != "--level low 3 --n={n} fixed" {
 		t.Fatalf("command args: %q %v", args, err)
 	}
 	d.Command, d.Script = nil, &Script{Lang: "bash", Body: "true"}
-	args, err = d.Args(map[string]string{"n": "3", "level": "high", "dry": "true"}, ".")
-	if err != nil || strings.Join(args, " ") != "high 3 true" {
+	args, err = d.Args(map[string]string{"n": " 3 ", "level": "high", "dry": "TRUE"}, ".")
+	if err != nil || strings.Join(args, " ") != "high 3 true" { // trimmed; bool as strconv.ParseBool
 		t.Fatalf("script args: %q %v", args, err)
 	}
 	for _, bad := range []map[string]string{
@@ -66,10 +67,22 @@ func TestCheckRefuses(t *testing.T) {
 		"neither":        {Name: "x"},
 		"absolute argv0": {Name: "x", Command: &Command{Argv: []string{"/usr/bin/x"}}},
 		"bare argv0":     {Name: "x", Command: &Command{Argv: []string{"make"}}},
-		"outside":        {Name: "x", Command: &Command{Argv: []string{"../x/y"}}},
 		"dash value":     {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Params: []Param{{Name: "a", Type: "enum", Values: []string{"-rf"}}}},
 		"reserved env":   {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Env: []string{"HARNSY_TOKEN"}},
 		"long timeout":   {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Timeout: "3h"},
+		"blank body":     {Name: "x", Script: &Script{Lang: "bash", Body: " \n"}},
+		"long title":     {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Title: strings.Repeat("t", 81)},
+		"long desc":      {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Description: strings.Repeat("d", 2001)},
+		"cwd outside":    {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Cwd: "../other"},
+		"cwd absolute":   {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Cwd: "/tmp"},
+		"same param":     {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Params: []Param{{Name: "a", Type: "int"}, {Name: "a", Type: "bool"}}},
+		"21 values":      {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Params: []Param{{Name: "a", Type: "enum", Values: strings.Split("a b c d e f g h i j k l m n o p q r s t u", " ")}}},
+		"long value":     {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Params: []Param{{Name: "a", Type: "enum", Values: []string{strings.Repeat("v", 81)}}}},
+		"bad mark":       {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Marks: []string{"reboots"}},
+		"bad number key": {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Numbers: []NumberD{{Key: "Size"}}},
+		"bad number of":  {Name: "x", Script: &Script{Lang: "bash", Body: "x"}, Numbers: []NumberD{{Key: "used", Of: "Total"}}},
+		"brace argv0":    {Name: "x", Command: &Command{Argv: []string{"bin/{tool}"}}},
+		"unknown {p}":    {Name: "x", Command: &Command{Argv: []string{"bin/x", "{nope}"}}},
 	} {
 		if d.Check() == nil {
 			t.Errorf("%s: passed", name)
@@ -82,6 +95,27 @@ func TestLoadRefusesUnknownFields(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "action.json"), []byte(`{"name":"x","script":{"lang":"bash"},"timeot":"1m"}`), 0o644)
 	os.WriteFile(filepath.Join(dir, "run.sh"), []byte("true\n"), 0o644)
 	if _, err := Load(dir); err == nil || !strings.Contains(err.Error(), "timeot") {
-		t.Errorf("a misspelt field: %v", err)
+		t.Errorf("a misspelled field: %v", err)
+	}
+}
+
+// A command's file is argv[0] under the action's cwd, inside the project.
+func TestCommandFile(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "tools", "bin"), 0o755)
+	os.WriteFile(filepath.Join(root, "tools", "bin", "x"), []byte("x"), 0o755)
+	d := &Definition{Name: "x", Cwd: "tools", Command: &Command{Argv: []string{"bin/x"}}}
+	got, err := d.CommandFile(root)
+	real, _ := filepath.EvalSymlinks(filepath.Join(root, "tools", "bin", "x"))
+	if err != nil || got != real {
+		t.Fatalf("file: %q %v", got, err)
+	}
+	d.Command.Argv[0] = "../../elsewhere/x"
+	if _, err := d.CommandFile(root); err == nil {
+		t.Error("a file outside the project passed")
+	}
+	d.Cwd = "../"
+	if _, err := d.WorkDir(root); err == nil {
+		t.Error("a cwd outside the project passed")
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Definition is an action's definition (contract 1.0.0).
@@ -102,60 +103,160 @@ func Load(dir string) (*Definition, error) {
 	return &d, d.Check()
 }
 
-// Check finds what harnsy would refuse in the definition (a subset of
-// contract/action-definition.schema.json, with the reasons spelled out).
+// Check finds what harnsy refuses when the definition is proposed (400
+// invalid): the rules of contract/action-definition.schema.json and of
+// harnsy's own check, each with its reason.
 func (d *Definition) Check() error {
 	var errs []error
-	if !namePattern.MatchString(d.Name) {
-		errs = append(errs, fmt.Errorf("name %q: lowercase letters, digits and -, up to 40", d.Name))
+	bad := func(format string, a ...any) { errs = append(errs, fmt.Errorf(format, a...)) }
+	if !namePattern.MatchString(strings.TrimSpace(d.Name)) {
+		bad("name %q: a-z, 0-9 and -, 1 to 40, starting with a letter or digit", d.Name)
 	}
-	if (d.Script == nil) == (d.Command == nil) {
-		errs = append(errs, errors.New("exactly one of script and command"))
+	if utf8.RuneCountInString(strings.TrimSpace(d.Title)) > 80 {
+		bad("title: up to 80 characters")
 	}
-	if d.Script != nil && (len(d.Script.Body) == 0 || len(d.Script.Body) > 65536) {
-		errs = append(errs, errors.New("script.body: 1 to 65536 bytes"))
+	if utf8.RuneCountInString(d.Description) > 2000 {
+		bad("description: up to 2000 characters")
 	}
-	if d.Command != nil {
-		if n := len(d.Command.Argv); n == 0 || n > 32 {
-			errs = append(errs, errors.New("command.argv: 1 to 32 items"))
-		} else if a0 := d.Command.Argv[0]; filepath.IsAbs(a0) || !strings.Contains(a0, "/") || strings.HasPrefix(filepath.Clean(a0), "..") {
-			errs = append(errs, fmt.Errorf("command.argv[0] %q: a relative path inside the project, with a slash (bin/tool)", a0))
+	switch {
+	case (d.Script == nil) == (d.Command == nil):
+		bad("give either script {lang, body} or command {argv}")
+	case d.Script != nil:
+		if _, ok := ScriptFiles[d.Script.Lang]; !ok {
+			bad("script.lang %q: bash, sh, python, node or go", d.Script.Lang)
 		}
+		if strings.TrimSpace(d.Script.Body) == "" || len(d.Script.Body) > 65536 || !utf8.ValidString(d.Script.Body) {
+			bad("script.body: UTF-8 text, not blank, up to 64 KiB")
+		}
+	default:
+		if n := len(d.Command.Argv); n == 0 || n > 32 {
+			bad("command.argv: 1 to 32 items")
+		} else if a0 := d.Command.Argv[0]; a0 == "" || filepath.IsAbs(a0) || strings.Contains(a0, "{") || !strings.ContainsAny(a0, `/\`) {
+			bad("command.argv[0] %q: a file of the project, as a relative path like bin/tool", a0)
+		}
+	}
+	if cwd := d.CwdOr(); filepath.IsAbs(cwd) || strings.HasPrefix(filepath.Clean(cwd), "..") {
+		bad("cwd %q: a directory inside the project, relative", d.Cwd)
 	}
 	if len(d.Params) > 8 {
-		errs = append(errs, errors.New("params: at most 8"))
+		bad("params: at most 8")
 	}
-	for _, p := range d.Params {
-		if !paramPattern.MatchString(p.Name) {
-			errs = append(errs, fmt.Errorf("param %q: [a-z][a-z0-9_]{0,31}", p.Name))
+	seen := map[string]bool{}
+	for i, p := range d.Params {
+		if !paramPattern.MatchString(p.Name) || seen[p.Name] {
+			bad("params[%d] %q: a-z, 0-9 and _, starting with a letter, unique", i, p.Name)
 		}
+		seen[p.Name] = true
 		switch p.Type {
 		case "enum":
-			if len(p.Values) == 0 {
-				errs = append(errs, fmt.Errorf("param %s: an enum needs values", p.Name))
-			}
-			for _, v := range p.Values {
-				if v == "" || strings.HasPrefix(v, "-") {
-					errs = append(errs, fmt.Errorf("param %s: value %q may not be empty or start with -", p.Name, v))
-				}
+			if len(p.Values) == 0 || len(p.Values) > 20 {
+				bad("param %s: an enum has 1 to 20 values", p.Name)
 			}
 		case "int", "bool", "commit", "item":
 		default:
-			errs = append(errs, fmt.Errorf("param %s: type %q is enum, int, bool, commit or item", p.Name, p.Type))
+			bad("param %s: type %q is enum, int, bool, commit or item", p.Name, p.Type)
+		}
+		for _, v := range p.Values {
+			if v == "" || len(v) > 80 || strings.HasPrefix(v, "-") {
+				bad("param %s: value %q: not empty, up to 80 characters, not starting with -", p.Name, v)
+			}
+		}
+	}
+	if d.Command != nil && len(d.Command.Argv) > 0 {
+		for _, a := range d.Command.Argv[1:] {
+			if n, ok := wholeParam(a); ok && !seen[n] {
+				bad("command.argv: %s names no parameter", a)
+			}
 		}
 	}
 	for _, e := range d.Env {
 		if !envPattern.MatchString(e) || reservedEnv.MatchString(e) {
-			errs = append(errs, fmt.Errorf("env %q: a variable name, not HARNSY_*, CCBUS_* or ACTION_*", e))
+			bad("env %q: a variable name, never HARNSY_*, CCBUS_* or ACTION_*", e)
 		}
 	}
 	if _, err := d.TimeoutOr(); err != nil {
 		errs = append(errs, err)
 	}
+	for _, m := range d.Marks {
+		if m != "restarts_node" && m != "deletes" && m != "network" {
+			bad("marks: restarts_node, deletes or network, not %q", m)
+		}
+	}
 	if len(d.Numbers) > 8 {
-		errs = append(errs, errors.New("numbers: at most 8"))
+		bad("numbers: at most 8")
+	}
+	for i, n := range d.Numbers {
+		if !paramPattern.MatchString(n.Key) || n.Of != "" && !paramPattern.MatchString(n.Of) {
+			bad("numbers[%d]: key and of are a-z, 0-9 and _, starting with a letter", i)
+		}
 	}
 	return errors.Join(errs...)
+}
+
+// CwdOr is the action's working directory, relative to the project: cwd,
+// "." when empty.
+func (d *Definition) CwdOr() string {
+	if d.Cwd == "" {
+		return "."
+	}
+	return d.Cwd
+}
+
+// WorkDir is the action's working directory: cwd under the project's directory,
+// symlinks resolved; an error when it leaves the project (harnsy: 409
+// cwd_outside).
+func (d *Definition) WorkDir(project string) (string, error) {
+	root, err := realDir(project)
+	if err != nil {
+		return "", err
+	}
+	dir, err := realDir(filepath.Join(root, d.CwdOr()))
+	if err != nil || !under(dir, root) {
+		return "", fmt.Errorf("cwd %q is outside the project", d.Cwd)
+	}
+	return dir, nil
+}
+
+// CommandFile is a command's file, as harnsy finds it: argv[0] under the
+// action's working directory, symlinks resolved, inside the project. harnsy
+// pins this file's sha256, and only it.
+func (d *Definition) CommandFile(project string) (string, error) {
+	dir, err := d.WorkDir(project)
+	if err != nil {
+		return "", err
+	}
+	root, _ := realDir(project)
+	path := filepath.Join(dir, d.Command.Argv[0])
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		path = real
+	}
+	if !under(filepath.Dir(path), root) {
+		return "", fmt.Errorf("%s is outside the project", d.Command.Argv[0])
+	}
+	return path, nil
+}
+
+func realDir(p string) (string, error) {
+	p, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(p)
+}
+
+func under(p, root string) bool {
+	rel, err := filepath.Rel(root, p)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// wholeParam: a is a whole {name} argument, the only place harnsy puts a
+// parameter in a command; "--level={level}" stays as written.
+func wholeParam(a string) (string, bool) {
+	n, ok := strings.CutPrefix(a, "{")
+	if !ok || !strings.HasSuffix(n, "}") {
+		return "", false
+	}
+	return strings.TrimSuffix(n, "}"), true
 }
 
 // TimeoutOr is the run's time limit: timeout, 30m when empty.
@@ -171,9 +272,11 @@ func (d *Definition) TimeoutOr() (time.Duration, error) {
 }
 
 // Args turns the values given (by parameter name; the rest take their
-// default) into arguments as harnsy passes them: script parameters in order,
-// a command's {name} places filled. repo is where a commit is resolved.
-func (d *Definition) Args(given map[string]string, repo string) ([]string, error) {
+// default) into arguments as harnsy passes them: script parameters in order;
+// in a command, each argument that is a whole {name} replaced by that value,
+// every other argument as written. dir is the action's working directory,
+// where a commit is resolved.
+func (d *Definition) Args(given map[string]string, dir string) ([]string, error) {
 	values := map[string]string{}
 	for k := range given {
 		if d.param(k) == nil {
@@ -189,7 +292,7 @@ func (d *Definition) Args(given map[string]string, repo string) ([]string, error
 			}
 			v = fmt.Sprint(p.Default)
 		}
-		v, err := p.value(v, repo)
+		v, err := p.value(v, dir)
 		if err != nil {
 			return nil, err
 		}
@@ -201,8 +304,8 @@ func (d *Definition) Args(given map[string]string, repo string) ([]string, error
 	}
 	var out []string
 	for _, a := range d.Command.Argv[1:] {
-		for name, v := range values {
-			a = strings.ReplaceAll(a, "{"+name+"}", v)
+		if n, ok := wholeParam(a); ok {
+			a = values[n]
 		}
 		out = append(out, a)
 	}
@@ -218,8 +321,11 @@ func (d *Definition) param(name string) *Param {
 	return nil
 }
 
-// value checks v as harnsy does and gives the argument.
-func (p Param) value(v, repo string) (string, error) {
+var refPattern = regexp.MustCompile(`^[A-Za-z0-9._/][A-Za-z0-9._/~^-]{0,99}$`)
+
+// value checks v as harnsy does (trimmed first) and gives the argument.
+func (p Param) value(v, dir string) (string, error) {
+	v = strings.TrimSpace(v)
 	switch p.Type {
 	case "enum":
 		for _, ok := range p.Values {
@@ -238,12 +344,18 @@ func (p Param) value(v, repo string) (string, error) {
 		}
 		return strconv.Itoa(n), nil
 	case "bool":
-		if v != "true" && v != "false" {
+		b, err := strconv.ParseBool(v) // as harnsy: 1, t, true, TRUE, 0, f, false…
+		if err != nil {
 			return "", fmt.Errorf("parameter %s: true or false, not %q", p.Name, v)
 		}
-		return v, nil
+		return strconv.FormatBool(b), nil
 	case "commit":
-		out, err := exec.Command("git", "-C", repo, "rev-parse", "--verify", v+"^{commit}").Output()
+		if !refPattern.MatchString(v) || strings.Contains(v, "..") {
+			return "", fmt.Errorf("parameter %s: %q is not a branch, tag or commit", p.Name, v)
+		}
+		cmd := exec.Command("git", "rev-parse", "--verify", "--quiet", "--end-of-options", v+"^{commit}")
+		cmd.Dir = dir
+		out, err := cmd.Output()
 		if err != nil {
 			return "", fmt.Errorf("parameter %s: %q is not a commit here", p.Name, v)
 		}

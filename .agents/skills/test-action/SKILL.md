@@ -13,6 +13,6 @@ description: Check a harnsy action of this repository before proposing it - run 
    - `last step` names the step it was in;
    - no `✗ result:` lines; every figure you want as a series is declared in `numbers` (else `try` notes it);
    - artifacts exist and lie in the project or `ACTION_DIR`.
-3. `make try` exits non-zero only when the result breaks the contract; add `-ok` (`go run ./cmd/try -ok actions/<name>`) to fail on a failed run too.
+3. `make try` exits non-zero when the result breaks the contract or a lang go script imports beyond the standard library; add `-ok` (`go run ./cmd/try -ok actions/<name>`) to fail on a failed run too.
 4. Bash: `shellcheck actions/<name>/*.sh`. Go: `golangci-lint run ./...` when installed (CI runs both).
 5. For a Go command: unit-test its logic in `internal/<name>`; `cmd/` stays thin.

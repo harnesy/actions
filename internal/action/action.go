@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -166,8 +167,8 @@ func (r Result) Check() error {
 		errs = append(errs, fmt.Errorf("links: at most %d", MaxLinks))
 	}
 	for i, l := range r.Links {
-		if !strings.HasPrefix(l.URL, "http://") && !strings.HasPrefix(l.URL, "https://") || len(l.URL) > MaxURL {
-			errs = append(errs, fmt.Errorf("links[%d]: an http(s) URL up to %d characters", i, MaxURL))
+		if u, err := url.Parse(l.URL); err != nil || u.Scheme != "http" && u.Scheme != "https" || u.Host == "" || len(l.URL) > MaxURL {
+			errs = append(errs, fmt.Errorf("links[%d]: an http(s) URL with a host, up to %d characters", i, MaxURL))
 		}
 		if utf8.RuneCountInString(l.Label) > MaxLabel {
 			errs = append(errs, fmt.Errorf("links[%d]: label up to %d characters", i, MaxLabel))

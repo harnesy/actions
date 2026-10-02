@@ -4,8 +4,10 @@ Write [harnsy](https://harnsy.dev) actions here: scripts an agent proposes
 and you run from the harnsy dashboard with one button, with a status, a
 summary and figures for every run.
 
-Press **Use this template**, clone your copy into (or next to) the project
-the actions are for, and start from one of the three examples.
+harnsy runs an action in its project's directory. Press **Use this
+template** and either make your copy the project, or copy `actions/`,
+`cmd/`, `internal/`, `Makefile` and the agent files into the project the
+actions are for. Then start from one of the three examples.
 
 | Example | Kind | What it shows |
 |---|---|---|
@@ -61,9 +63,12 @@ The full text is [`contract/contract.md`](contract/contract.md) (version
 Schemas and an OpenAPI description next to it.
 
 - **Arguments.** One per parameter, in the declared order (`$1`, `$2`, …);
-  in a command, where `{name}` stands. Never a shell string.
-  `enum` the value, `int` and `item` digits, `bool` `true`/`false`,
-  `commit` a full 40-character hash.
+  in a command, an argument that is exactly `{name}` becomes that value
+  (`--level={level}` stays as written: use `--level` `{level}`). Never a
+  shell string. Values are trimmed: `enum` the value, `int` and `item`
+  digits, `bool` `true` or `false` (`1`, `t`, `TRUE` are accepted),
+  `commit` the full 40-character hash a branch, tag or commit resolves to
+  in the action's directory.
 - **Environment.** Only `PATH`, `HOME`, `LANG`, `USER`, `TMPDIR`, the
   names the action lists in `env`, and `ACTION_CONTRACT` (`1`),
   `ACTION_RUN_ID`, `ACTION_RESULT` (write the result there),
@@ -94,16 +99,20 @@ change is a new version that waits for you again.
 - A **script** (bash, sh, python, node, go): the whole body is pinned and
   shown to you before you enable it.
 - A **command**: harnsy pins the file `argv[0]` only, not what it calls.
-  Propose a **built binary** (`bin/go-stats`): every rebuild changes its
-  sha256, so harnsy turns the action off and waits for you to enable it
-  again. Do not propose a wrapper such as `run.sh` that calls `go run
-  ./cmd/x`: the Go code under it would change without asking you.
+  Propose a **built binary** (`bin/go-stats`): a build of changed code
+  has another sha256, so harnsy turns the action off and waits for you to
+  enable it again. Do not propose a wrapper such as `run.sh` that calls
+  `go run ./cmd/x`: the Go code under it would change without asking you.
 
 ## Go
 
-- **One file** (`lang: go`): harnsy runs `go run <copy>.go` outside any
-  module, so only the standard library can be imported. Copy the few
-  helper lines from [`actions/todo-count/main.go`](actions/todo-count/main.go).
+- **One file** (`lang: go`): harnsy runs `go run <copy>.go` with the
+  action's directory as the working directory, so the project's `go.mod`
+  applies: the script could import the project's packages, and a
+  `toolchain` line may download a Go toolchain. Keep it to the standard
+  library: harnsy pins the script, not what it imports (`make try` fails
+  on any other import). Copy the few helper lines from
+  [`actions/todo-count/main.go`](actions/todo-count/main.go).
 - **A program** (command): `cmd/<name>/main.go` with its logic in
   `internal/<name>` and tests next to it, the contract through
   [`internal/action`](internal/action) (`FromEnv`, `Step`, `Fail`,
