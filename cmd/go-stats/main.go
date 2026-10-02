@@ -11,8 +11,8 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/harnesy/action-template/internal/action"
-	"github.com/harnesy/action-template/internal/gostats"
+	"github.com/harnesy/actions/internal/action"
+	"github.com/harnesy/actions/internal/gostats"
 )
 
 func main() {

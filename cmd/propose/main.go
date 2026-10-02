@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harnesy/action-template/internal/def"
+	"github.com/harnesy/actions/internal/def"
 )
 
 func main() {

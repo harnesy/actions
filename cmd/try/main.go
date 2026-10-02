@@ -37,8 +37,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harnesy/action-template/internal/action"
-	"github.com/harnesy/action-template/internal/def"
+	"github.com/harnesy/actions/internal/action"
+	"github.com/harnesy/actions/internal/def"
 )
 
 type params map[string]string

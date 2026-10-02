@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/harnesy/action-template/internal/def"
+	"github.com/harnesy/actions/internal/def"
 )
 
 // project makes a project with one action: action.json and its files
